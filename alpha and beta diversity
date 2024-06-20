@@ -1,0 +1,226 @@
+```{r Calculate alpha diversity [Richness, Shannon, Evenness]}
+alpha_summary_SPR <- estimate_richness(Sven_phyto_rare, measures = c("Observed", "Shannon"))
+
+# this calculates eveness and adds it to the prior file
+
+Evenness <- microbiome::evenness(Sven_phyto_rare, 'pielou')
+alpha_summary_SPR$Pielou <- Evenness$pielou
+
+# combine results with sample_data. This is useful if we wish to plot later against other variables or information.
+alpha_meta_SPR <- data.frame(alpha_summary_SPR, sample_data(Sven_phyto_rare))
+
+
+
+
+library(tidyr)
+library(Rmisc)
+
+# convert data from wide to long for easier plotting
+alpha_meta_SPR_long = gather(alpha_meta_SPR, Alpha, alpha_value, c("Observed", "Shannon", "Pielou"), factor_key = FALSE)
+
+# summarise data
+Observed_sum.df = summarySE(alpha_meta_SPR_long, measurevar = "alpha_value", groupvars = c("Alpha","Culture_type", "Phyto", "HoursFromStart", "Cultivation_Stage", "BacterialStatus"))
+
+Observed_sum.df$ExperimentalPhase = factor(Observed_sum.df$Cultivation_Stage,
+                                       levels = c("Lag",
+                                                  "Exponential",
+                                                  "Stationary",
+                                                  "Death"))
+
+Observed_sum.df$Phyto<-as.factor(Observed_sum.df$Phyto)
+  
+  
+alpha_plot <- ggplot(Observed_sum.df, aes(x = HoursFromStart, 
+                                     y = alpha_value, 
+                                     color = Phyto, 
+                                     shape = BacterialStatus,
+                                     group = Culture_type))+
+  geom_point(size = 3)+
+  geom_line() +
+  geom_errorbar(aes(ymin=alpha_value-sd, 
+                    ymax=alpha_value+sd), 
+                width = 0.2) +
+  theme_bw() +
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_color_manual("Phytoplankton",values = Cond.col) +
+  ylab("Alpha diversity") +
+  xlab("Hours") +
+  My_Theme +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  facet_grid(Alpha~., scales = "free_y")
+alpha_plot 
+
+ggsave("",width = 6,height = 10,units ="in", device="pdf")
+
+alpha_plot_stage <- ggplot(Observed_sum.df, aes(x = Cultivation_Stage, 
+                                     y = alpha_value, 
+                                     color = Phyto, 
+                                     shape = BacterialStatus,
+                                     group = Culture_type))+
+  geom_point(size = 3)+
+  geom_line() +
+  geom_errorbar(aes(ymin=alpha_value-sd, 
+                    ymax=alpha_value+sd), 
+                width = 0.2) +
+  theme_bw() +
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_color_manual("Phytoplankton",values = Cond.col) +
+  ylab("Alpha diversity") +
+  xlab("Growth phase") +
+  My_Theme+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  facet_grid(Alpha~., scales = "free_y") +
+  scale_x_discrete(limits = c("Lag","Exponential","Stationary","Death"))
+alpha_plot_stage 
+
+ggsave("", width = 6, height = 10,units ="in", device = "pdf")
+```
+
+```{r Compare beta diversity, results = 'markup'}
+
+# ordinate data using Non-metric multidimensional scaling (NMDS) on Bray–Curtis dissimilarity (distances)
+set.seed(1)
+NMDS_16S.ord <- ordinate(Sven_phyto_rare, "NMDS", "bray")
+
+# by calling the newly created file we can get the stress value of the plot
+NMDS_16S.ord
+
+library(vegan)
+library(grid)
+library(ggforce)
+
+stressplot(NMDS_16S.ord)
+
+# create label for stress value
+Stress_val = grobTree(textGrob("Stress = 0.18", x = 0.05,  y = 0.05, hjust = 0, gp = gpar(col = "Black", fontsize = 14, fontface = "italic")))
+
+
+Sven_phyto_16S_NMDS <- plot_ordination(Sven_phyto_rare, NMDS_16S.ord, type = "samples",color = "Phyto", shape = "BacterialStatus") +
+  geom_point(size = 3) +
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_color_manual("Phytoplankton",values = Cond.col) +
+  My_Theme +
+  annotation_custom(Stress_val) +
+  theme_bw(base_size = 12) +
+  geom_mark_ellipse(aes(group = Cultivation_Stage, label = Cultivation_Stage,linetype = Cultivation_Stage),alpha = 0.2, con.cap = 0) +
+xlim(-0.7, 0.7) +
+ylim(-0.6, 0.6) +
+scale_linetype_manual(breaks=c("Lag", "Exponential", "Stationary", "Death"),values=c("solid", "longdash", "dotdash", "dotted")) +
+    scale_linetype_discrete(name = "Growth Stage")+
+  ggtitle("All") +
+  theme(
+    plot.title=element_text(face = "bold")
+  )
+
+Sven_phyto_16S_NMDS$layers <- Sven_phyto_16S_NMDS$layers[-1]
+
+Sven_phyto_16S_NMDS
+
+ggsave("",width = 7,height = 5, units ="in", device = "pdf")
+
+
+# stats by Culture_type
+# ANOSIM
+Culture_type_group = get_variable(Sven_phyto_rare, "Culture_type")
+Culture_type_ano = anosim(phyloseq::distance(Sven_phyto_rare, "bray"), Culture_type_group)
+Culture_type_ano$signif
+Culture_type_ano$statistic
+
+# ADONIS
+# create a data frame using your sample_data
+df_ado = as(sample_data(Sven_phyto_rare), "data.frame")
+# calculate your Bray distance matrix
+Culture_type_ado = phyloseq::distance(Sven_phyto_rare, "bray")
+# perform your ADONIS test
+Culture_type_ado_stats <- adonis2(Culture_type_ado ~ Culture_type, df_ado)
+
+# check results
+Culture_type_ado_stats
+
+
+# stats by Growth stage
+# ANOSIM
+Cultivation_Stage_group = get_variable(Sven_phyto_rare, "Cultivation_Stage")
+Cultivation_Stage_ano = anosim(phyloseq::distance(Sven_phyto_rare, "bray"), Cultivation_Stage_group)
+Cultivation_Stage_ano$signif
+Cultivation_Stage_ano$statistic
+
+# ADONIS
+# create a data frame using your sample_data
+df_ado = as(sample_data(Sven_phyto_rare), "data.frame")
+# calculate your Bray distance matrix
+Cultivation_Stage_ado = phyloseq::distance(Sven_phyto_rare, "bray")
+# perform your ADONIS test
+Cultivation_Stage_ado_stats <- adonis2(Cultivation_Stage_ado ~ Culture_type, df_ado)
+
+# check results
+Cultivation_Stage_ado_stats
+```
+
+```{r Compare beta diversity Lag, results='markup'}
+
+Sven_phyto_rare_Lag <- subset_samples(Sven_phyto_rare, Cultivation_Stage == "Lag")
+Sven_phyto_rare_Lag
+
+# remove outlier point
+
+Sven_phyto_rare_Lag <- subset_samples(Sven_phyto_rare_Lag, sample_names(Sven_phyto_rare_Lag)!="PP2B_1_T0")
+
+# ordinate data using Non-metric multidimensional scaling (NMDS) on Bray–Curtis dissimilarity (distances)
+set.seed(1)
+Lag_NMDS_16S <- ordinate(Sven_phyto_rare_Lag, "NMDS", "bray")
+
+# by calling the newly created file we can get the stress value of the plot
+Lag_NMDS_16S
+nmds_coordinates <- Lag_NMDS_16S$points
+
+stressplot(Lag_NMDS_16S)
+
+# create label for stress value
+Lag_Stress_val = grobTree(textGrob("Stress = 0.13", x = 0.05,  y = 0.05, hjust = 0, gp = gpar(col = "Black", fontsize = 14,fontface = "italic")))
+
+Lag_Sven_phyto_16S_NMDS <- plot_ordination(Sven_phyto_rare_Lag, Lag_NMDS_16S, type = "samples",color = "Phyto", shape = "BacterialStatus") +
+  geom_point(size = 3) +
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_color_manual("Phytoplankton",values = Cond.col) +
+  My_Theme+
+  annotation_custom(Lag_Stress_val) +
+  theme_bw(base_size=12) +
+  scale_linetype_manual(breaks=c("Lag", "Lag", "Stationary", "Death"),values=c("solid", "longdash", "dotdash", "dotted"))+
+  scale_linetype_discrete(name = "Phytoplankton")+
+  geom_mark_ellipse(aes(group=Phyto, label = Phyto,linetype = Phyto),alpha = 1,con.cap = 1) +
+  xlim(-1, 1) +
+  ylim(-1.1, 1.2) +
+  ggtitle("Lag") +
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+Lag_Sven_phyto_16S_NMDS$layers <- Lag_Sven_phyto_16S_NMDS$layers[-1]
+
+Lag_Sven_phyto_16S_NMDS
+
+
+
+ggsave("", width = 7, height = 5,units = "in", device = "pdf")
+
+
+# stats by Culture_type
+# ANOSIM
+Culture_type_group = get_variable(Sven_phyto_rare_Lag, "Culture_type")
+Culture_type_ano = anosim(phyloseq::distance(Sven_phyto_rare_Lag, "bray"), Culture_type_group)
+Culture_type_ano$signif
+Culture_type_ano$statistic
+
+# ADONIS
+# create a data frame using your sample_data
+df_ado = as(sample_data(Sven_phyto_rare_Lag), "data.frame")
+# calculate your Bray distance matrix
+Culture_type_ado = phyloseq::distance(Sven_phyto_rare_Lag, "bray")
+# perform your ADONIS test
+Culture_type_ado_stats <- adonis2(Culture_type_ado ~ Culture_type, df_ado)
+
+# check results
+Culture_type_ado_stats
+
+```
