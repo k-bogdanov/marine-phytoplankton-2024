@@ -1,0 +1,1467 @@
+---
+title: "phyto_full_code"
+author: "KB"
+date: "2024-06-20"
+output: github_document
+---
+
+
+```{r global_options, echo=FALSE, results='hide'}
+library(knitr)
+knitr::opts_chunk$set(fig.width = 12, fig.height = 8, fig.align = 'center', results = 'hide', echo = FALSE, warning = FALSE, message = FALSE, cache = FALSE)
+```
+
+
+```{r load data}
+
+library("phyloseq")
+library(microViz)
+library(dplyr)
+library(stringr)
+
+#import data
+Sven_phyto <- readRDS("C:/Users/bogda/Documents/PhD/sven/Phyloseq_object_16S.rds")
+
+#/Volumes/micro-shared$/MoralesLab/Manuscripts/Sven_PhytoBact_CultExp/raw_data/Phyloseq_object_16S.rds
+
+#remove unwanted samples
+Sven_phyto = ps_filter(Sven_phyto, Culture_type != "DELETE")
+
+#import revised metadata
+new_sample_data <- read.csv(file="C:/Users/bogda/Documents/PhD/sven/mappingfile.csv", header = TRUE, fileEncoding="UTF-8-BOM", check.names = FALSE, row.names = 1)
+
+new_sample_data = new_sample_data %>% 
+  mutate(BacterialStatus = if_else(str_detect(Culture_type, "Bacteria"), "Present", "Absent"))
+
+
+
+new_sample_data$ExperimentalPhase = factor(new_sample_data$Cultivation_Stage,
+                                       levels = c("Lag",
+                                                  "Exponential",
+                                                  "Stationary",
+                                                  "Death"))
+
+#update metadata
+sample_data(Sven_phyto) <- new_sample_data
+Sven_phyto_metadata <- data.frame(sample_data(Sven_phyto))
+
+
+
+
+```
+
+Rarefaction curves to  determine subsampling level. 30000 reads chosen. All samples used for analysis. 
+
+```{r rarefaction}
+
+# Remove any samples with less than 100 sequences
+
+pruned <- prune_samples(sample_sums(Sven_phyto) >= 100, Sven_phyto)
+pruned
+
+library(ggplot2)
+library(ranacapa)
+
+# Calculate rarefaction curves, then plot and color by subsite
+p <- ggrare(pruned, step = 1000, color = "Culture_type", se =
+              FALSE,parallel = TRUE)+
+  scale_y_log10() +
+  scale_x_continuous(limits = c(1, 170000))
+p
+
+
+p + facet_wrap(~Culture_type)
+
+# Rarefy at 30k
+
+Sven_phyto_rare <- rarefy_even_depth(Sven_phyto, 30000, rngseed=TRUE)
+```
+
+```{r theme}
+
+My_Theme = theme_bw() +
+  theme(axis.title.x = element_text(size=18),
+        axis.text.x = element_text(angle=0, colour = "black", vjust=1, hjust = 0.5, size=18), 
+        axis.text.y = element_text(colour = "black", size=18),
+        axis.title.y = element_text(size=18),
+        plot.title = element_text(size = 18),
+        legend.title =element_text(size = 18),
+        legend.text = element_text(size = 18),
+        legend.position="right",
+        legend.key.size = unit(1, "cm"),
+        strip.text.x = element_text(size=18),
+        strip.text.y = element_text(size=18),
+        #panel.background = element_blank(),
+        panel.border = element_rect(fill = NA, colour = "black"),
+        strip.background = element_rect(colour="black"))
+
+
+#Culture_type colours
+Cond.col <- c("None" = "black",
+              "Coccolithophore" = "#D83706FF",
+              "Diatom" = "#117733")
+
+Cond.sha = c("BacterialControl" = 1, #Hollow circle
+             "CoccolithophoreBacteria" = 1, #Hollow circle
+             "CoccolithophoreOnly" = 16, #Filled circle
+             "DiatomBacteria" = 1, #Hollow circle
+             "DiatomOnly" = 16) #Filled circle
+
+BactStat.sha = c("Present" = 16, #Filled circle 
+            "Absent" = 1) #Hollow circle
+
+```
+
+```{r Calculate alpha diversity [Richness, Shannon, Evenness]}
+
+alpha_summary_SPR<- estimate_richness(Sven_phyto_rare, measures = c("Observed", "Shannon"))
+
+#This calculates eveness and adds it to the prior file
+
+Evenness <- microbiome::evenness(Sven_phyto_rare, 'pielou')
+alpha_summary_SPR$Pielou <- Evenness$pielou
+
+# Combine results with sample_data. This is useful if we wish to plot later against other variables or information.
+alpha_meta_SPR <- data.frame(alpha_summary_SPR, sample_data(Sven_phyto_rare))
+
+
+
+
+library(tidyr)
+library(Rmisc)
+
+#Convert data from wide to long for easier plotting
+alpha_meta_SPR_long = gather(alpha_meta_SPR, Alpha, alpha_value, c("Observed", "Shannon", "Pielou"), factor_key = F)
+
+#Summarise data
+Observed_sum.df = summarySE(alpha_meta_SPR_long, measurevar = "alpha_value", groupvars = c("Alpha","Culture_type", "Phyto", "HoursFromStart", "Cultivation_Stage", "BacterialStatus"))
+
+Observed_sum.df$ExperimentalPhase = factor(Observed_sum.df$Cultivation_Stage,
+                                       levels = c("Lag",
+                                                  "Exponential",
+                                                  "Stationary",
+                                                  "Death"))
+
+Observed_sum.df$Phyto<-as.factor(Observed_sum.df$Phyto)
+  
+  
+alpha_plot <- ggplot(Observed_sum.df, aes(x = HoursFromStart, 
+                                     y = alpha_value, 
+                                     color = Phyto, 
+                                     shape = BacterialStatus,
+                                     group = Culture_type))+
+  geom_point(size=3)+
+  geom_line()+
+  geom_errorbar(aes(ymin=alpha_value-sd, 
+                    ymax=alpha_value+sd), 
+                width=0.2) +
+  theme_bw()+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_color_manual("Phytoplankton",values = Cond.col) +
+  ylab("Alpha diversity")+
+  xlab("Hours")+
+  My_Theme+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  facet_grid(Alpha~., scales = "free_y")
+alpha_plot 
+
+
+alpha_plot_stage <- ggplot(Observed_sum.df, aes(x = Cultivation_Stage, 
+                                     y = alpha_value, 
+                                     color = Phyto, 
+                                     shape = BacterialStatus,
+                                     group = Culture_type))+
+  geom_point(size=3)+
+  geom_line()+
+  geom_errorbar(aes(ymin=alpha_value-sd, 
+                    ymax=alpha_value+sd), 
+                width=0.2) +
+  theme_bw()+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_color_manual("Phytoplankton",values = Cond.col) +
+  ylab("Alpha diversity")+
+  xlab("Growth phase")+
+  My_Theme+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  facet_grid(Alpha~., scales = "free_y")+
+  scale_x_discrete(limits = c("Lag","Exponential","Stationary","Death"))
+alpha_plot_stage 
+
+
+```
+
+
+
+NMDS ordinations based on 16s data
+ANOSIM and ADONIS results shown below done by Culture_type
+
+```{r Compare beta diversity, results='markup'}
+
+# Ordinate data using Non-metric multidimensional scaling (NMDS) on Bray–Curtis dissimilarity (distances)
+set.seed(1)
+NMDS_16S.ord <- ordinate(Sven_phyto_rare, "NMDS", "bray")
+
+# By calling the newly created file we can get the stress value of the plot
+NMDS_16S.ord
+
+library(vegan)
+library(grid)
+library(ggforce)
+
+stressplot(NMDS_16S.ord)
+
+# Create label for stress value
+Stress_val = grobTree(textGrob("Stress = 0.18", x = 0.05,  y = 0.05, hjust = 0, gp = gpar(col = "Black", fontsize = 14,fontface = "italic")))
+
+
+Sven_phyto_16S_NMDS <- plot_ordination(Sven_phyto_rare, NMDS_16S.ord, type = "samples",color="Phyto", shape= "BacterialStatus")+
+  geom_point(size=3)+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_color_manual("Phytoplankton",values = Cond.col) +
+  My_Theme+
+  annotation_custom(Stress_val)+
+  theme_bw(base_size=12)+
+  geom_mark_ellipse(aes(group=Cultivation_Stage, label = Cultivation_Stage,linetype = Cultivation_Stage),alpha = 0.2,con.cap = 0)+
+xlim(-0.7, 0.7)+
+ylim(-0.6, 0.6)+
+scale_linetype_manual(breaks=c("Lag","Exponential", "Stationary", "Death"),values=c("solid","longdash","dotdash","dotted"))+
+    scale_linetype_discrete(name = "Growth Stage")+
+  ggtitle("All")+
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+
+
+Sven_phyto_16S_NMDS$layers <- Sven_phyto_16S_NMDS$layers[-1]
+
+Sven_phyto_16S_NMDS
+
+
+
+# Stats by Culture_type
+# ANOSIM
+Culture_type_group = get_variable(Sven_phyto_rare, "Culture_type")
+Culture_type_ano = anosim(phyloseq::distance(Sven_phyto_rare, "bray"), Culture_type_group)
+Culture_type_ano$signif
+Culture_type_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Sven_phyto_rare), "data.frame")
+# Calculate your Bray distance matrix
+Culture_type_ado = phyloseq::distance(Sven_phyto_rare, "bray")
+# Perform your ADONIS test
+Culture_type_ado_stats <- adonis2(Culture_type_ado ~ Culture_type, df_ado)
+
+# Check results
+Culture_type_ado_stats
+
+
+# Stats by Growth stage
+# ANOSIM
+Cultivation_Stage_group = get_variable(Sven_phyto_rare, "Cultivation_Stage")
+Cultivation_Stage_ano = anosim(phyloseq::distance(Sven_phyto_rare, "bray"), Cultivation_Stage_group)
+Cultivation_Stage_ano$signif
+Cultivation_Stage_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Sven_phyto_rare), "data.frame")
+# Calculate your Bray distance matrix
+Cultivation_Stage_ado = phyloseq::distance(Sven_phyto_rare, "bray")
+# Perform your ADONIS test
+Cultivation_Stage_ado_stats <- adonis2(Cultivation_Stage_ado ~ Culture_type, df_ado)
+
+# Check results
+Cultivation_Stage_ado_stats
+
+
+```
+
+
+```{r Compare beta diversity Lag, results='markup'}
+
+Sven_phyto_rare_Lag <- subset_samples(Sven_phyto_rare, Cultivation_Stage == "Lag")
+Sven_phyto_rare_Lag
+
+#remove outlier point
+
+Sven_phyto_rare_Lag <- subset_samples(Sven_phyto_rare_Lag, sample_names(Sven_phyto_rare_Lag)!="PP2B_1_T0")
+
+
+
+
+# Ordinate data using Non-metric multidimensional scaling (NMDS) on Bray–Curtis dissimilarity (distances)
+set.seed(1)
+Lag_NMDS_16S <- ordinate(Sven_phyto_rare_Lag, "NMDS", "bray")
+
+# By calling the newly created file we can get the stress value of the plot
+Lag_NMDS_16S
+nmds_coordinates <- Lag_NMDS_16S$points
+
+
+
+stressplot(Lag_NMDS_16S)
+
+# Create label for stress value
+Lag_Stress_val = grobTree(textGrob("Stress = 0.13", x = 0.05,  y = 0.05, hjust = 0, gp = gpar(col = "Black", fontsize = 14,fontface = "italic")))
+
+
+Lag_Sven_phyto_16S_NMDS <- plot_ordination(Sven_phyto_rare_Lag, Lag_NMDS_16S, type = "samples",color="Phyto", shape= "BacterialStatus")+
+  geom_point(size=3)+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_color_manual("Phytoplankton",values = Cond.col) +
+  My_Theme+
+  annotation_custom(Lag_Stress_val)+
+  theme_bw(base_size=12)+
+  scale_linetype_manual(breaks=c("Lag","Lag", "Stationary", "Death"),values=c("solid","longdash","dotdash","dotted"))+
+  scale_linetype_discrete(name = "Phytoplankton")+
+  geom_mark_ellipse(aes(group=Phyto, label = Phyto,linetype = Phyto),alpha = 1,con.cap = 1)+
+  xlim(-1, 1)+
+  ylim(-1.1, 1.2)+
+  ggtitle("Lag")+
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+Lag_Sven_phyto_16S_NMDS$layers <- Lag_Sven_phyto_16S_NMDS$layers[-1]
+
+Lag_Sven_phyto_16S_NMDS
+
+
+# Stats by Culture_type
+# ANOSIM
+Culture_type_group = get_variable(Sven_phyto_rare_Lag, "Culture_type")
+Culture_type_ano = anosim(phyloseq::distance(Sven_phyto_rare_Lag, "bray"), Culture_type_group)
+Culture_type_ano$signif
+Culture_type_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Sven_phyto_rare_Lag), "data.frame")
+# Calculate your Bray distance matrix
+Culture_type_ado = phyloseq::distance(Sven_phyto_rare_Lag, "bray")
+# Perform your ADONIS test
+Culture_type_ado_stats <- adonis2(Culture_type_ado ~ Culture_type, df_ado)
+
+# Check results
+Culture_type_ado_stats
+
+```
+
+
+```{r Compare beta diversity Exponential, results='markup'}
+
+Sven_phyto_rare_Exponential <- subset_samples(Sven_phyto_rare, Cultivation_Stage == "Exponential")
+Sven_phyto_rare_Exponential
+
+# Ordinate data using Non-metric multidimensional scaling (NMDS) on Bray–Curtis dissimilarity (distances)
+set.seed(1)
+Exponential_NMDS_16S <- ordinate(Sven_phyto_rare_Exponential, "NMDS", "bray")
+
+# By calling the newly created file we can get the stress value of the plot
+Exponential_NMDS_16S
+nmds_coordinates <- Exponential_NMDS_16S$points
+
+
+
+stressplot(Exponential_NMDS_16S)
+
+# Create label for stress value
+Exponential_Stress_val = grobTree(textGrob("Stress = 0.12", x = 0.04,  y = 0.03, hjust = 0, gp = gpar(col = "Black", fontsize = 14,fontface = "italic")))
+
+
+Exponential_Sven_phyto_16S_NMDS <- plot_ordination(Sven_phyto_rare_Exponential, Exponential_NMDS_16S, type = "samples",color="Phyto", shape= "BacterialStatus")+
+  geom_point(size=3)+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_color_manual("Phytoplankton",values = Cond.col) +
+  My_Theme+
+  annotation_custom(Exponential_Stress_val)+
+  theme_bw(base_size=12)+
+  scale_linetype_manual(breaks=c("Exponential","Exponential", "Stationary", "Death"),values=c("solid","longdash","dotdash","dotted"))+
+  scale_linetype_discrete(name = "Phytoplankton")+
+  geom_mark_ellipse(aes(group=Phyto, label = Phyto,linetype = Phyto),alpha = 1,con.cap = 1)+
+  xlim(-1.3, 1.2)+
+  ylim(-1.5, 1.4)+
+  ggtitle("Exponential")+
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+Exponential_Sven_phyto_16S_NMDS$layers <- Exponential_Sven_phyto_16S_NMDS$layers[-1]
+
+Exponential_Sven_phyto_16S_NMDS
+
+
+# Stats by Culture_type
+# ANOSIM
+Culture_type_group = get_variable(Sven_phyto_rare_Exponential, "Culture_type")
+Culture_type_ano = anosim(phyloseq::distance(Sven_phyto_rare_Exponential, "bray"), Culture_type_group)
+Culture_type_ano$signif
+Culture_type_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Sven_phyto_rare_Exponential), "data.frame")
+# Calculate your Bray distance matrix
+Culture_type_ado = phyloseq::distance(Sven_phyto_rare_Exponential, "bray")
+# Perform your ADONIS test
+Culture_type_ado_stats <- adonis2(Culture_type_ado ~ Culture_type, df_ado)
+
+# Check results
+Culture_type_ado_stats
+
+```
+
+
+```{r Compare beta diversity Stationary, results='markup'}
+
+Sven_phyto_rare_Stationary <- subset_samples(Sven_phyto_rare, Cultivation_Stage == "Stationary")
+Sven_phyto_rare_Stationary
+
+# Ordinate data using Non-metric multidimensional scaling (NMDS) on Bray–Curtis dissimilarity (distances)
+set.seed(1)
+Stationary_NMDS_16S <- ordinate(Sven_phyto_rare_Stationary, "NMDS", "bray")
+
+# By calling the newly created file we can get the stress value of the plot
+Stationary_NMDS_16S
+
+nmds_coordinates <- Stationary_NMDS_16S$points
+
+
+stressplot(Stationary_NMDS_16S)
+
+# Create label for stress value
+Stationary_Stress_val = grobTree(textGrob("Stress = 0.16", x = 0.05,  y = 0.05, hjust = 0, gp = gpar(col = "Black", fontsize = 14,fontface = "italic")))
+
+
+Stationary_Sven_phyto_16S_NMDS <- plot_ordination(Sven_phyto_rare_Stationary, Stationary_NMDS_16S, type = "samples",color="Phyto", shape= "BacterialStatus")+
+  geom_point(size=3)+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_color_manual("Phytoplankton",values = Cond.col) +
+  My_Theme+
+  annotation_custom(Stationary_Stress_val)+
+  theme_bw(base_size=12)+
+  scale_linetype_manual(breaks=c("Stationary","Stationary", "Stationary", "Death"),values=c("solid","longdash","dotdash","dotted"))+
+  scale_linetype_discrete(name = "Phytoplankton")+
+  geom_mark_ellipse(aes(group=Phyto, label = Phyto,linetype = Phyto),alpha = 1,con.cap = 1)+
+  xlim(-2.1, 1.9)+
+  ylim(-2.1, 1.8)+
+  ggtitle("Stationary")+
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+Stationary_Sven_phyto_16S_NMDS$layers <- Stationary_Sven_phyto_16S_NMDS$layers[-1]
+
+Stationary_Sven_phyto_16S_NMDS
+
+# Stats by Culture_type
+# ANOSIM
+Culture_type_group = get_variable(Sven_phyto_rare_Stationary, "Culture_type")
+Culture_type_ano = anosim(phyloseq::distance(Sven_phyto_rare_Stationary, "bray"), Culture_type_group)
+Culture_type_ano$signif
+Culture_type_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Sven_phyto_rare_Stationary), "data.frame")
+# Calculate your Bray distance matrix
+Culture_type_ado = phyloseq::distance(Sven_phyto_rare_Stationary, "bray")
+# Perform your ADONIS test
+Culture_type_ado_stats <- adonis2(Culture_type_ado ~ Culture_type, df_ado)
+
+# Check results
+Culture_type_ado_stats
+
+```
+
+
+```{r Compare beta diversity Death, results='markup'}
+
+Sven_phyto_rare_Death <- subset_samples(Sven_phyto_rare, Cultivation_Stage == "Death")
+Sven_phyto_rare_Death
+
+# Ordinate data using Non-metric multidimensional scaling (NMDS) on Bray–Curtis dissimilarity (distances)
+set.seed(1)
+Death_NMDS_16S <- ordinate(Sven_phyto_rare_Death, "NMDS", "bray")
+
+# By calling the newly created file we can get the stress value of the plot
+Death_NMDS_16S
+
+nmds_coordinates <- Death_NMDS_16S$points
+
+
+stressplot(Death_NMDS_16S)
+
+# Create label for stress value
+Death_Stress_val = grobTree(textGrob("Stress = 0.15", x = 0.05,  y = 0.05, hjust = 0, gp = gpar(col = "Black", fontsize = 14,fontface = "italic")))
+
+
+Death_Sven_phyto_16S_NMDS <- plot_ordination(Sven_phyto_rare_Death, Death_NMDS_16S, type = "samples",color="Phyto", shape= "BacterialStatus")+
+  geom_point(size=3)+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_color_manual("Phytoplankton",values = Cond.col) +
+  My_Theme+
+  annotation_custom(Death_Stress_val)+
+  theme_bw(base_size=12)+
+  scale_linetype_manual(breaks=c("Death","Death", "Death", "Death"),values=c("solid","longdash","dotdash","dotted"))+
+  scale_linetype_discrete(name = "Phytoplankton")+
+  geom_mark_ellipse(aes(group=Phyto, label = Phyto,linetype = Phyto),alpha = 1,con.cap = 1)+
+  xlim(-1, 1.3)+
+  ylim(-1.3, 1.3)+
+  ggtitle("Death")+
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+Death_Sven_phyto_16S_NMDS$layers <- Death_Sven_phyto_16S_NMDS$layers[-1]
+
+Death_Sven_phyto_16S_NMDS
+
+
+
+# Stats by Culture_type
+# ANOSIM
+Culture_type_group = get_variable(Sven_phyto_rare_Death, "Culture_type")
+Culture_type_ano = anosim(phyloseq::distance(Sven_phyto_rare_Death, "bray"), Culture_type_group)
+Culture_type_ano$signif
+Culture_type_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Sven_phyto_rare_Death), "data.frame")
+# Calculate your Bray distance matrix
+Culture_type_ado = phyloseq::distance(Sven_phyto_rare_Death, "bray")
+# Perform your ADONIS test
+Culture_type_ado_stats <- adonis2(Culture_type_ado ~ Culture_type, df_ado)
+
+# Check results
+Culture_type_ado_stats
+
+```
+
+```{r Combine NMDS plots}
+
+Combined_NMDS_plot = ggpubr::ggarrange(Lag_Sven_phyto_16S_NMDS,
+                                  Exponential_Sven_phyto_16S_NMDS,
+                                  Stationary_Sven_phyto_16S_NMDS,
+                                  Death_Sven_phyto_16S_NMDS,
+                                  ncol = 2,
+                                  nrow = 2,
+                                  common.legend = T,
+                                  legend = "right")
+
+
+
+```
+
+
+```{r distance comparisons Lag}
+
+Totu_table = t(otu_table(Sven_phyto_rare_Lag)) # transpose otu table
+otu_table(Sven_phyto_rare_Lag) = Totu_table
+
+p = Sven_phyto_rare_Lag
+m = "bray"
+s = "Original.names"
+d = "Culture_type"
+
+# Calculate distances
+library(reshape2)
+library(reshape)
+library(dplyr)
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+
+
+
+# Remove self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor, as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor, as.character) 
+
+library(tibble)
+sd <- tibble::rownames_to_column(sd, "Sample.names")
+sd = subset(sd, select = -c(Original.names) )
+
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Culture_type")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Culture_type2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums = wu.sd %>%
+  filter(Culture_type == 'BacterialControl') %>%
+  mutate_if(is.factor,as.character)
+
+# Order factors
+wu.sd.sums$Culture_type2 = factor(wu.sd.sums$Culture_type2, levels = c('BacterialControl', 'CoccolithophoreOnly', 'CoccolithophoreBacteria' ,'DiatomOnly','DiatomBacteria'))
+
+library(ggpubr)
+
+
+sdpb = data.frame(sample_data(p))%>%
+  select(s, d, Phyto,BacterialStatus)%>%
+  mutate_if(is.factor, as.character)
+
+sdpb <- tibble::rownames_to_column(sdpb, "Sample.names")
+sdpb = subset(sdpb, select = -c(Original.names) )
+colnames(sdpb) = c("Var2", "Culture_type2","Phyto", "BacterialStatus")
+wu.sd.sums = left_join(wu.sd.sums, sdpb, by = "Var2")
+
+
+#wu.sd.sums$BacterialStatus = factor(wu.sd.sums$BacterialStatus,levels = c("None","Coccolithophore","Diatom"))
+
+wu.sd.sums$Phyto<-as.factor(wu.sd.sums$Phyto)
+
+
+
+Lag_16S_dist_plot<-ggplot(wu.sd.sums, aes(x = Culture_type2.x, y = value,
+                                                 fill = Phyto, 
+                                                 group = Culture_type2.x))+
+  geom_boxplot() +
+  geom_point()+
+  ylab("Bray distance") + xlab("") +
+  stat_compare_means(method = "kruskal.test", size = 3,label.x = 3, label.y = .2, aes(group = Culture_type2.x))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "BacterialControl") + 
+  ggtitle("Lag")+
+  theme_bw()+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_fill_manual("Phytoplankton",values = Cond.col) +
+  ylab("Bray Distance")+
+  My_Theme+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2)))+
+  scale_x_discrete(breaks=c('BacterialControl', 'CoccolithophoreOnly', 'CoccolithophoreBacteria' ,'DiatomOnly','DiatomBacteria'),
+                     labels=c("Control","Coccolithophore","Coccolithophore + microbiome", "Diatom", "Diatom + microbiome"))+
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+Lag_16S_dist_plot
+
+
+
+```
+
+```{r distance comparisons Exponential}
+
+Sven_phyto_rare_Exponential <- subset_samples(Sven_phyto_rare, Cultivation_Stage == "Exponential")
+Sven_phyto_rare_Exponential
+
+Totu_table = t(otu_table(Sven_phyto_rare_Exponential)) # transpose otu table
+otu_table(Sven_phyto_rare_Exponential) = Totu_table
+
+p = Sven_phyto_rare_Exponential
+m = "bray"
+s = "Original.names"
+d = "Culture_type"
+
+# Calculate distances
+library(reshape2)
+library(reshape)
+library(dplyr)
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+
+
+
+# Remove self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor, as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor, as.character) 
+
+library(tibble)
+sd <- tibble::rownames_to_column(sd, "Sample.names")
+sd = subset(sd, select = -c(Original.names) )
+
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Culture_type")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Culture_type2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums = wu.sd %>%
+  filter(Culture_type == 'BacterialControl') %>%
+  mutate_if(is.factor,as.character)
+
+# Order factors
+wu.sd.sums$Culture_type2 = factor(wu.sd.sums$Culture_type2, levels = c('BacterialControl', 'CoccolithophoreOnly', 'CoccolithophoreBacteria' ,'DiatomOnly','DiatomBacteria'))
+
+
+
+sdpb = data.frame(sample_data(p))%>%
+  select(s, d, Phyto,BacterialStatus)%>%
+  mutate_if(is.factor, as.character)
+
+sdpb <- tibble::rownames_to_column(sdpb, "Sample.names")
+sdpb = subset(sdpb, select = -c(Original.names) )
+colnames(sdpb) = c("Var2", "Culture_type2","Phyto", "BacterialStatus")
+wu.sd.sums = left_join(wu.sd.sums, sdpb, by = "Var2")
+
+
+wu.sd.sums$BacterialStatus = factor(wu.sd.sums$BacterialStatus,
+                                           levels = c("None",
+                                                      "Coccolithophore",
+                                                      "Diatom"))
+
+wu.sd.sums$Phyto<-as.factor(wu.sd.sums$Phyto)
+
+
+
+Exponential_16S_dist_plot<-ggplot(wu.sd.sums, aes(x = Culture_type2.x, y = value,
+                                                 fill = Phyto, 
+                                                 group = Culture_type2.x))+
+  geom_boxplot() +
+  geom_point()+
+  ylab("Bray distance") + xlab("") +
+  stat_compare_means(method = "kruskal.test", size = 3,label.x = 3, label.y = .5, aes(group = Culture_type2.x))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "BacterialControl") + 
+  ggtitle("Exponential")+
+  theme_bw()+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_fill_manual("Phytoplankton",values = Cond.col) +
+  ylab("Bray Distance")+
+  My_Theme+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2)))+
+  scale_x_discrete(breaks=c('BacterialControl', 'CoccolithophoreOnly', 'CoccolithophoreBacteria' ,'DiatomOnly','DiatomBacteria'),
+                     labels=c("Control","Coccolithophore","Coccolithophore + microbiome", "Diatom", "Diatom + microbiome"))+
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+
+Exponential_16S_dist_plot
+
+
+
+
+```
+
+```{r distance comparisons Stationary}
+
+Sven_phyto_rare_Stationary <- subset_samples(Sven_phyto_rare, Cultivation_Stage == "Stationary")
+Sven_phyto_rare_Stationary
+
+Totu_table = t(otu_table(Sven_phyto_rare_Stationary)) # transpose otu table
+otu_table(Sven_phyto_rare_Stationary) = Totu_table
+
+p = Sven_phyto_rare_Stationary
+m = "bray"
+s = "Original.names"
+d = "Culture_type"
+
+# Calculate distances
+
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+
+
+
+# Remove self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor, as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor, as.character) 
+
+
+sd <- tibble::rownames_to_column(sd, "Sample.names")
+sd = subset(sd, select = -c(Original.names) )
+
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Culture_type")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Culture_type2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums = wu.sd %>%
+  filter(Culture_type == 'BacterialControl') %>%
+  mutate_if(is.factor,as.character)
+
+# Order factors
+wu.sd.sums$Culture_type2 = factor(wu.sd.sums$Culture_type2, levels = c('BacterialControl', 'CoccolithophoreOnly', 'CoccolithophoreBacteria' ,'DiatomOnly','DiatomBacteria'))
+
+
+
+
+sdpb = data.frame(sample_data(p))%>%
+  select(s, d, Phyto,BacterialStatus)%>%
+  mutate_if(is.factor, as.character)
+
+sdpb <- tibble::rownames_to_column(sdpb, "Sample.names")
+sdpb = subset(sdpb, select = -c(Original.names) )
+colnames(sdpb) = c("Var2", "Culture_type2","Phyto", "BacterialStatus")
+wu.sd.sums = left_join(wu.sd.sums, sdpb, by = "Var2")
+
+
+wu.sd.sums$BacterialStatus = factor(wu.sd.sums$BacterialStatus,
+                                           levels = c("None",
+                                                      "Coccolithophore",
+                                                      "Diatom"))
+
+wu.sd.sums$Phyto<-as.factor(wu.sd.sums$Phyto)
+
+
+
+Stationary_16S_dist_plot<-ggplot(wu.sd.sums, aes(x = Culture_type2.x, y = value,
+                                                 fill = Phyto, 
+                                                 group = Culture_type2.x))+
+  geom_boxplot() +
+  geom_point()+
+  ylab("Bray distance") + xlab("") +
+  stat_compare_means(method = "kruskal.test", size = 3,label.x = 3, label.y = .6, aes(group = Culture_type2.x))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "BacterialControl",position = position_nudge(y = 0.03)) + 
+  ggtitle("Stationary")+
+  theme_bw()+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_fill_manual("Phytoplankton",values = Cond.col) +
+  My_Theme+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2)))+
+  scale_x_discrete(breaks=c('BacterialControl', 'CoccolithophoreOnly', 'CoccolithophoreBacteria' ,'DiatomOnly','DiatomBacteria'),
+                     labels=c("Control","Coccolithophore","Coccolithophore + microbiome", "Diatom", "Diatom + microbiome"))+
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+
+Stationary_16S_dist_plot
+
+
+
+```
+
+
+```{r distance comparisons Death}
+
+Sven_phyto_rare_Death <- subset_samples(Sven_phyto_rare, Cultivation_Stage == "Death")
+Sven_phyto_rare_Death
+
+Totu_table = t(otu_table(Sven_phyto_rare_Death)) # transpose otu table
+otu_table(Sven_phyto_rare_Death) = Totu_table
+
+p = Sven_phyto_rare_Death
+m = "bray"
+s = "Original.names"
+d = "Culture_type"
+
+# Calculate distances
+
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+
+
+
+# Remove self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor, as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor, as.character) 
+
+library(tibble)
+sd <- tibble::rownames_to_column(sd, "Sample.names")
+sd = subset(sd, select = -c(Original.names) )
+
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Culture_type")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Culture_type2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums = wu.sd %>%
+  filter(Culture_type == 'BacterialControl') %>%
+  mutate_if(is.factor,as.character)
+
+# Order factors
+wu.sd.sums$Culture_type2 = factor(wu.sd.sums$Culture_type2, levels = c('BacterialControl', 'CoccolithophoreOnly', 'CoccolithophoreBacteria' ,'DiatomOnly','DiatomBacteria'))
+
+
+
+sdpb = data.frame(sample_data(p))%>%
+  select(s, d, Phyto,BacterialStatus)%>%
+  mutate_if(is.factor, as.character)
+
+sdpb <- tibble::rownames_to_column(sdpb, "Sample.names")
+sdpb = subset(sdpb, select = -c(Original.names) )
+colnames(sdpb) = c("Var2", "Culture_type2","Phyto", "BacterialStatus")
+wu.sd.sums = left_join(wu.sd.sums, sdpb, by = "Var2")
+
+
+wu.sd.sums$BacterialStatus = factor(wu.sd.sums$BacterialStatus,
+                                           levels = c("None",
+                                                      "Coccolithophore",
+                                                      "Diatom"))
+
+wu.sd.sums$Phyto<-as.factor(wu.sd.sums$Phyto)
+
+
+
+Death_16S_dist_plot<-ggplot(wu.sd.sums, aes(x = Culture_type2.x, y = value,
+                                                 fill = Phyto, 
+                                                 group = Culture_type2.x))+
+  geom_boxplot() +
+  geom_point()+
+  ylab("Bray distance") + xlab("") +
+  stat_compare_means(method = "kruskal.test", size = 3,label.x = 3, label.y = .6, aes(group = Culture_type2.x))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "BacterialControl") + 
+  ggtitle("Death")+
+  theme_bw()+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_fill_manual("Phytoplankton",values = Cond.col) +
+  ylab("Bray Distance")+
+  My_Theme+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2)))+
+  scale_x_discrete(breaks=c('BacterialControl', 'CoccolithophoreOnly', 'CoccolithophoreBacteria' ,'DiatomOnly','DiatomBacteria'),
+                     labels=c("Control","Coccolithophore","Coccolithophore + microbiome", "Diatom", "Diatom + microbiome"))+
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+
+Death_16S_dist_plot
+
+
+
+
+```
+
+```{r Combine distance plots}
+
+Combined_dist_plot = ggpubr::ggarrange(Lag_16S_dist_plot,
+                                       Exponential_16S_dist_plot,
+                                       Stationary_16S_dist_plot,
+                                       Death_16S_dist_plot,
+                                       ncol = 2,
+                                       nrow = 2,
+                                       common.legend = T,
+                                       legend = "right")
+
+
+```
+
+Stacked bar plot based on phylum (draft and clean version)
+
+```{r stack bar phylum}
+
+library(plyr)
+library(scales)
+
+# Clean graph and cluster by Culture_type
+
+library(dplyr)
+library(microViz)
+library(fantaxtic)
+library(speedyseq)
+library(phylosmith)
+
+Sven_phyto_rare <- merge_treatments(Sven_phyto_rare, c("Culture_type", "Cultivation_Stage"))
+
+SPR_clean <- name_na_taxa(Sven_phyto_rare, na_label = "Unidentified <tax> (<rank>)")
+
+SPR_clean_test<-tax_fix(SPR_clean)
+
+SPR_clean_test
+
+SPR_clean_test %>%
+  ps_arrange(
+    Cultivation_Stage = factor(Cultivation_Stage, levels = c("Death","Stationary","Exponential", "Lag")))%>%
+  ps_mutate(
+    Culture_type = factor(Culture_type, levels = c("CoccolithophoreOnly","DiatomOnly", "BacterialControl","CoccolithophoreBacteria" ,"DiatomBacteria"))) %>% 
+  comp_barplot("Phylum", n_taxa = 15, merge_other = FALSE, label = "Cultivation_Stage", sample_order = "asis") +
+  facet_wrap(vars(Culture_type), scales = "free") + # scales = "free" is IMPORTANT!
+  coord_flip() +
+  theme(axis.ticks.y = element_blank(), strip.text = element_text(face = "bold"))
+
+
+
+```
+
+
+
+
+Stacked bar plot based on Order (clean version)
+
+```{r stack bar Order}
+SPR_clean_test %>%
+  ps_arrange(
+    Cultivation_Stage = factor(Cultivation_Stage, levels = c("Death","Stationary","Exponential", "Lag")))%>%
+  ps_mutate(
+    Culture_type = factor(Culture_type, levels = c("CoccolithophoreOnly","DiatomOnly", "BacterialControl","CoccolithophoreBacteria" ,"DiatomBacteria"))) %>% 
+  comp_barplot("Order", n_taxa = 15, merge_other = FALSE, label = "Cultivation_Stage", sample_order = "asis") +
+  facet_wrap(vars(Culture_type), scales = "free") + # scales = "free" is IMPORTANT!
+  coord_flip() +
+  theme(axis.ticks.y = element_blank(), strip.text = element_text(face = "bold"))
+
+
+```
+
+```{r Genus plot}
+
+test<-SPR_clean_test %>%
+  ps_arrange(
+    Cultivation_Stage = factor(Cultivation_Stage, levels = c("Death","Stationary","Exponential", "Lag")))%>%
+  ps_mutate(
+    Culture_type = factor(Culture_type, levels = c("CoccolithophoreOnly","DiatomOnly", "BacterialControl","CoccolithophoreBacteria" ,"DiatomBacteria"))) %>% 
+  comp_barplot("Genus", n_taxa = 15, merge_other = FALSE, label = "Cultivation_Stage", sample_order = "asis") +
+  facet_wrap(vars(Culture_type), scales = "free") + # scales = "free" is IMPORTANT!
+  coord_flip() +
+  theme(axis.ticks.y = element_blank(), strip.text = element_text(face = "bold"))
+
+
+test<-data.frame(test[["data"]])
+
+
+ test<-as.data.frame(test)
+```
+
+
+```{r significantly affected taxa by stage Lag}
+
+Control_Coccoonly_Lag <- subset_samples(Sven_phyto_rare_Lag, Culture_type %in% c("BacterialControl", "CoccolithophoreOnly"))
+
+Control_Coccobact_Lag <- subset_samples(Sven_phyto_rare_Lag, Culture_type %in% c("BacterialControl", "CoccolithophoreBacteria"))
+
+Control_DiatomOnly_Lag <- subset_samples(Sven_phyto_rare_Lag, Culture_type %in% c("BacterialControl", "DiatomOnly"))
+
+Control_Diatombact_Lag <- subset_samples(Sven_phyto_rare_Lag, Culture_type %in% c("BacterialControl", "DiatomBacteria"))
+
+
+#no hits after p adjusted so used just p value
+Control_Coccoonly_Lag_df<-Control_Coccoonly_Lag %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+library(rstatix)
+# do tests
+KW_taxa_Control_Coccoonly_Lag<-Control_Coccoonly_Lag_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Culture_type) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05)
+
+#no hits after p adjusted so used just p value
+Control_Coccobact_Lag_df<-Control_Coccobact_Lag %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+# do tests
+KW_taxa_Control_Coccobact_Lag<-Control_Coccobact_Lag_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Culture_type) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05)
+
+#no hits after p adjusted so used just p value
+Control_DiatomOnly_Lag_df<-Control_DiatomOnly_Lag %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+# do tests
+KW_taxa_Control_DiatomOnly_Lag<-Control_DiatomOnly_Lag_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Culture_type) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05)
+
+#no hits after p adjusted so used just p value
+Control_Diatombact_Lag_df<-Control_Diatombact_Lag %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+# do tests
+KW_taxa_Control_Diatombact_Lag<-Control_Diatombact_Lag_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Culture_type) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05)
+```
+
+
+```{r significantly affected taxa by stage Exponential}
+
+Control_Coccoonly_Exponential <- subset_samples(Sven_phyto_rare_Exponential, Culture_type %in% c("BacterialControl", "CoccolithophoreOnly"))
+
+Control_Coccobact_Exponential <- subset_samples(Sven_phyto_rare_Exponential, Culture_type %in% c("BacterialControl", "CoccolithophoreBacteria"))
+
+Control_DiatomOnly_Exponential <- subset_samples(Sven_phyto_rare_Exponential, Culture_type %in% c("BacterialControl", "DiatomOnly"))
+
+Control_Diatombact_Exponential <- subset_samples(Sven_phyto_rare_Exponential, Culture_type %in% c("BacterialControl", "DiatomBacteria"))
+
+
+#no hits after p adjusted so used just p value
+Control_Coccoonly_Exponential_df<-Control_Coccoonly_Exponential %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+library(rstatix)
+# do tests
+KW_taxa_Control_Coccoonly_Exponential<-Control_Coccoonly_Exponential_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Culture_type) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05)
+
+#no hits after p adjusted so used just p value
+Control_Coccobact_Exponential_df<-Control_Coccobact_Exponential %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+# do tests
+KW_taxa_Control_Coccobact_Exponential<-Control_Coccobact_Exponential_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Culture_type) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05)
+
+#no hits after p adjusted so used just p value
+Control_DiatomOnly_Exponential_df<-Control_DiatomOnly_Exponential %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+# do tests
+KW_taxa_Control_DiatomOnly_Exponential<-Control_DiatomOnly_Exponential_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Culture_type) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05)
+
+#no hits after p adjusted so used just p value
+Control_Diatombact_Exponential_df<-Control_Diatombact_Exponential %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+# do tests
+KW_taxa_Control_Diatombact_Exponential<-Control_Diatombact_Exponential_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Culture_type) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05)
+```
+
+```{r significantly affected taxa by stage Stationary}
+
+Control_Coccoonly_Stationary <- subset_samples(Sven_phyto_rare_Stationary, Culture_type %in% c("BacterialControl", "CoccolithophoreOnly"))
+
+Control_Coccobact_Stationary <- subset_samples(Sven_phyto_rare_Stationary, Culture_type %in% c("BacterialControl", "CoccolithophoreBacteria"))
+
+Control_DiatomOnly_Stationary <- subset_samples(Sven_phyto_rare_Stationary, Culture_type %in% c("BacterialControl", "DiatomOnly"))
+
+Control_Diatombact_Stationary <- subset_samples(Sven_phyto_rare_Stationary, Culture_type %in% c("BacterialControl", "DiatomBacteria"))
+
+
+#no hits after p adjusted so used just p value
+Control_Coccoonly_Stationary_df<-Control_Coccoonly_Stationary %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+library(rstatix)
+# do tests
+KW_taxa_Control_Coccoonly_Stationary<-Control_Coccoonly_Stationary_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Culture_type) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05)
+
+#no hits after p adjusted so used just p value
+Control_Coccobact_Stationary_df<-Control_Coccobact_Stationary %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+# do tests
+KW_taxa_Control_Coccobact_Stationary<-Control_Coccobact_Stationary_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Culture_type) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05)
+
+#no hits after p adjusted so used just p value
+Control_DiatomOnly_Stationary_df<-Control_DiatomOnly_Stationary %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+# do tests
+KW_taxa_Control_DiatomOnly_Stationary<-Control_DiatomOnly_Stationary_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Culture_type) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05)
+
+#no hits after p adjusted so used just p value
+Control_Diatombact_Stationary_df<-Control_Diatombact_Stationary %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+# do tests
+KW_taxa_Control_Diatombact_Stationary<-Control_Diatombact_Stationary_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Culture_type) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05)
+```
+
+```{r significantly affected taxa by stage Death}
+
+Control_Coccoonly_Death <- subset_samples(Sven_phyto_rare_Death, Culture_type %in% c("BacterialControl", "CoccolithophoreOnly"))
+
+Control_Coccobact_Death <- subset_samples(Sven_phyto_rare_Death, Culture_type %in% c("BacterialControl", "CoccolithophoreBacteria"))
+
+Control_DiatomOnly_Death <- subset_samples(Sven_phyto_rare_Death, Culture_type %in% c("BacterialControl", "DiatomOnly"))
+
+Control_Diatombact_Death <- subset_samples(Sven_phyto_rare_Death, Culture_type %in% c("BacterialControl", "DiatomBacteria"))
+
+
+#no hits after p adjusted so used just p value
+Control_Coccoonly_Death_df<-Control_Coccoonly_Death %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+library(rstatix)
+# do tests
+KW_taxa_Control_Coccoonly_Death<-Control_Coccoonly_Death_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Culture_type) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05)
+
+#no hits after p adjusted so used just p value
+Control_Coccobact_Death_df<-Control_Coccobact_Death %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+# do tests
+KW_taxa_Control_Coccobact_Death<-Control_Coccobact_Death_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Culture_type) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05)
+
+#no hits after p adjusted so used just p value
+Control_DiatomOnly_Death_df<-Control_DiatomOnly_Death %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+# do tests
+KW_taxa_Control_DiatomOnly_Death<-Control_DiatomOnly_Death_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Culture_type) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05)
+
+#no hits after p adjusted so used just p value
+Control_Diatombact_Death_df<-Control_Diatombact_Death %>% 
+  transform_sample_counts(function(x) {x/sum(x)} ) %>%
+  psmelt() 
+
+# do tests
+KW_taxa_Control_Diatombact_Death<-Control_Diatombact_Death_df%>% 
+  group_by(OTU) %>% 
+  kruskal_test(Abundance ~ Culture_type) %>% 
+  adjust_pvalue(method="fdr")%>% 
+  filter(p < 0.05)
+```
+
+```{r All significantly affected taxa plot Phylum}
+
+#combine significant taxa across all tests
+KW_taxa_All <- rbind(KW_taxa_Control_Coccoonly_Lag,KW_taxa_Control_Coccobact_Lag, KW_taxa_Control_DiatomOnly_Lag, KW_taxa_Control_Diatombact_Lag,KW_taxa_Control_Coccoonly_Exponential,KW_taxa_Control_Coccobact_Exponential, KW_taxa_Control_DiatomOnly_Exponential, KW_taxa_Control_Diatombact_Exponential,KW_taxa_Control_Coccoonly_Stationary,KW_taxa_Control_Coccobact_Stationary, KW_taxa_Control_DiatomOnly_Stationary, KW_taxa_Control_Diatombact_Stationary,KW_taxa_Control_Coccoonly_Death,KW_taxa_Control_Coccobact_Death, KW_taxa_Control_DiatomOnly_Death, KW_taxa_Control_Diatombact_Death,KW_taxa_Control_Coccoonly_Death,KW_taxa_Control_Coccobact_Death, KW_taxa_Control_DiatomOnly_Death, KW_taxa_Control_Diatombact_Death)
+
+#remove redundant names and subset ps object
+KW_taxa_All_names<-unique(KW_taxa_All$OTU)
+
+KW_SPR_clean2 = prune_taxa(KW_taxa_All_names, SPR_clean) 
+
+KW_SPR_clean2 <- name_na_taxa(KW_SPR_clean2, na_label = "Unidentified <tax> (<rank>)")
+
+#KW_SPR_clean2<-tax_fix(KW_SPR_clean2)
+
+
+KW_SPR_clean2 %>%
+  ps_arrange(
+    Cultivation_Stage = factor(Cultivation_Stage, levels = c("Death","Stationary","Exponential", "Lag")))%>%
+  ps_mutate(
+    Culture_type = factor(Culture_type, levels = c("CoccolithophoreOnly","DiatomOnly", "BacterialControl","CoccolithophoreBacteria" ,"DiatomBacteria"))) %>% 
+  comp_barplot("Phylum", n_taxa = 15, merge_other = FALSE, label = "Cultivation_Stage", sample_order = "asis") +
+  facet_wrap(vars(Culture_type), scales = "free") + # scales = "free" is IMPORTANT!
+  coord_flip() +
+  theme(axis.ticks.y = element_blank(), strip.text = element_text(face = "bold"))
+
+
+```
+
+
+
+```{r All significantly affected taxa plot Order}
+
+KW_SPR_clean2 %>%
+  ps_arrange(
+    Cultivation_Stage = factor(Cultivation_Stage, levels = c("Death","Stationary","Exponential", "Lag")))%>%
+  ps_mutate(
+    Culture_type = factor(Culture_type, levels = c("CoccolithophoreOnly","DiatomOnly", "BacterialControl","CoccolithophoreBacteria" ,"DiatomBacteria"))) %>% 
+  comp_barplot("Order", n_taxa = 15, merge_other = FALSE, label = "Cultivation_Stage", sample_order = "asis") +
+  facet_wrap(vars(Culture_type), scales = "free") + # scales = "free" is IMPORTANT!
+  coord_flip() +
+  theme(axis.ticks.y = element_blank(), strip.text = element_text(face = "bold"))
+
+
+```
+
+
+```{r All significantly affected taxa plot Family}
+
+KW_SPR_clean2 %>%
+  ps_arrange(
+    Cultivation_Stage = factor(Cultivation_Stage, levels = c("Death","Stationary","Exponential", "Lag")))%>%
+  ps_mutate(
+    Culture_type = factor(Culture_type, levels = c("CoccolithophoreOnly","DiatomOnly", "BacterialControl","CoccolithophoreBacteria" ,"DiatomBacteria"))) %>% 
+  comp_barplot("Family", n_taxa = 15, merge_other = FALSE, label = "Cultivation_Stage", sample_order = "asis") +
+  facet_wrap(vars(Culture_type), scales = "free") + # scales = "free" is IMPORTANT!
+  coord_flip() +
+  theme(axis.ticks.y = element_blank(), strip.text = element_text(face = "bold"))
+
+
+```
+
+
+```{r All significantly affected taxa plot Genus}
+
+KW_SPR_clean2 %>%
+  ps_arrange(
+    Cultivation_Stage = factor(Cultivation_Stage, levels = c("Death","Stationary","Exponential", "Lag")))%>%
+  ps_mutate(
+    Culture_type = factor(Culture_type, levels = c("CoccolithophoreOnly","DiatomOnly", "BacterialControl","CoccolithophoreBacteria" ,"DiatomBacteria"))) %>% 
+  comp_barplot("Genus", n_taxa = 15, merge_other = FALSE, label = "Cultivation_Stage", sample_order = "asis") +
+  facet_wrap(vars(Culture_type), scales = "free") + # scales = "free" is IMPORTANT!
+  coord_flip() +
+  theme(axis.ticks.y = element_blank(), strip.text = element_text(face = "bold"))
+
+
+
+```
+
+```{r old taxa plot code}
+
+SPR_clean2 <- SPR_clean %>%
+  ps_select(Culture_type, Phyto, HoursFromStart, Cultivation_Stage, BacterialStatus,Culture_type_Cultivation_Stage) %>% # avoids lots of phyloseq::merge_samples warnings
+  merge_samples2(group = "Culture_type_Cultivation_Stage", funs = list()) %>%
+  tax_glom(taxrank = "Phylum")
+
+SPR_clean2 %>%
+  tax_filter(
+    tax_level = "Phylum", min_prevalence = 0.001,
+    prev_detection_threshold = 100
+  ) %>%
+  ps_mutate(
+    Culture_type = factor(Culture_type, levels = c("CoccolithophoreOnly","DiatomOnly", "BacterialControl","CoccolithophoreBacteria" ,"DiatomBacteria"))) %>%  
+  ps_mutate(
+    Phyto = factor(Phyto, levels = c('Coccolithophore', 'Diatom', 'None'))) %>%  
+  ps_mutate(
+    Cultivation_Stage = factor(Cultivation_Stage, levels = c('Lag','Exponential','Stationary','Death'))) %>%  
+  comp_barplot(
+    tax_level = "Phylum", n_taxa = 10,
+    bar_outline_colour = NA,
+    bar_width = 0.7,
+    taxon_renamer = toupper,
+    facet_by = "Culture_type",
+    label = "Cultivation_Stage",
+    x = "Cultivation_Stage"
+    ) + 
+  theme(legend.text = element_text(size = 12),
+        legend.title =element_text(size = 14, face="bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(angle = 45, colour = "black", size = 10, vjust = 1, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size = 12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank())
+
+
+
+
+
+# Clean graph and cluster by Culture_type
+
+SPR_clean2_Order <- SPR_clean %>%
+  ps_select(Culture_type, Phyto, HoursFromStart, Cultivation_Stage, BacterialStatus,Culture_type_Cultivation_Stage) %>% # avoids lots of phyloseq::merge_samples warnings
+  merge_samples2(group = "Culture_type_Cultivation_Stage", funs = list()) %>%
+  tax_glom(taxrank = "Order")
+
+SPR_clean2_Order %>%
+  tax_filter(
+    tax_level = "Order", min_prevalence = 0.001,
+    prev_detection_threshold = 100
+  ) %>%
+  ps_mutate(
+    Culture_type = factor(Culture_type, levels = c("CoccolithophoreOnly","DiatomOnly", "BacterialControl","CoccolithophoreBacteria" ,"DiatomBacteria"))) %>%  
+  ps_mutate(
+    Phyto = factor(Phyto, levels = c('Coccolithophore', 'Diatom', 'None'))) %>%  
+  ps_mutate(
+    Cultivation_Stage = factor(Cultivation_Stage, levels = c('Lag','Exponential','Stationary','Death'))) %>%  
+  comp_barplot(
+    tax_level = "Order", n_taxa = 10,
+    bar_outline_colour = NA,
+    bar_width = 0.7,
+    taxon_renamer = toupper,
+    facet_by = "Culture_type",
+    label = "Cultivation_Stage",
+    x = "Cultivation_Stage"
+  ) + 
+  theme(legend.text = element_text(size = 12),
+        legend.title =element_text(size = 14, face="bold"),
+        axis.title = element_text(size = 14), 
+        axis.text.x = element_text(angle = 45, colour = "black", size = 10, vjust = 1, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size = 12),
+        panel.background = element_rect(fill = "grey98"),
+        panel.grid = element_line(color = "grey75"),
+        panel.grid.major.y = element_blank(),
+        panel.grid.major.x = element_blank())
+
+
+```
+
