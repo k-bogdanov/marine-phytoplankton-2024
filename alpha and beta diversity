@@ -224,3 +224,209 @@ Culture_type_ado_stats <- adonis2(Culture_type_ado ~ Culture_type, df_ado)
 Culture_type_ado_stats
 
 ```
+
+```{r Compare beta diversity Exponential, results='markup'}
+
+Sven_phyto_rare_Exponential <- subset_samples(Sven_phyto_rare, Cultivation_Stage == "Exponential")
+Sven_phyto_rare_Exponential
+
+# Ordinate data using Non-metric multidimensional scaling (NMDS) on Bray–Curtis dissimilarity (distances)
+set.seed(1)
+Exponential_NMDS_16S <- ordinate(Sven_phyto_rare_Exponential, "NMDS", "bray")
+
+# By calling the newly created file we can get the stress value of the plot
+Exponential_NMDS_16S
+nmds_coordinates <- Exponential_NMDS_16S$points
+
+
+
+stressplot(Exponential_NMDS_16S)
+
+# Create label for stress value
+Exponential_Stress_val = grobTree(textGrob("Stress = 0.12", x = 0.04,  y = 0.03, hjust = 0, gp = gpar(col = "Black", fontsize = 14,fontface = "italic")))
+
+
+Exponential_Sven_phyto_16S_NMDS <- plot_ordination(Sven_phyto_rare_Exponential, Exponential_NMDS_16S, type = "samples",color="Phyto", shape= "BacterialStatus")+
+  geom_point(size=3)+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_color_manual("Phytoplankton",values = Cond.col) +
+  My_Theme+
+  annotation_custom(Exponential_Stress_val)+
+  theme_bw(base_size=12)+
+  scale_linetype_manual(breaks=c("Exponential","Exponential", "Stationary", "Death"),values=c("solid","longdash","dotdash","dotted"))+
+  scale_linetype_discrete(name = "Phytoplankton")+
+  geom_mark_ellipse(aes(group=Phyto, label = Phyto,linetype = Phyto),alpha = 1,con.cap = 1)+
+  xlim(-1.3, 1.2)+
+  ylim(-1.5, 1.4)+
+  ggtitle("Exponential")+
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+Exponential_Sven_phyto_16S_NMDS$layers <- Exponential_Sven_phyto_16S_NMDS$layers[-1]
+
+Exponential_Sven_phyto_16S_NMDS
+
+
+# Stats by Culture_type
+# ANOSIM
+Culture_type_group = get_variable(Sven_phyto_rare_Exponential, "Culture_type")
+Culture_type_ano = anosim(phyloseq::distance(Sven_phyto_rare_Exponential, "bray"), Culture_type_group)
+Culture_type_ano$signif
+Culture_type_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Sven_phyto_rare_Exponential), "data.frame")
+# Calculate your Bray distance matrix
+Culture_type_ado = phyloseq::distance(Sven_phyto_rare_Exponential, "bray")
+# Perform your ADONIS test
+Culture_type_ado_stats <- adonis2(Culture_type_ado ~ Culture_type, df_ado)
+
+# Check results
+Culture_type_ado_stats
+
+```
+
+
+```{r Compare beta diversity Stationary, results='markup'}
+
+Sven_phyto_rare_Stationary <- subset_samples(Sven_phyto_rare, Cultivation_Stage == "Stationary")
+Sven_phyto_rare_Stationary
+
+# Ordinate data using Non-metric multidimensional scaling (NMDS) on Bray–Curtis dissimilarity (distances)
+set.seed(1)
+Stationary_NMDS_16S <- ordinate(Sven_phyto_rare_Stationary, "NMDS", "bray")
+
+# By calling the newly created file we can get the stress value of the plot
+Stationary_NMDS_16S
+
+nmds_coordinates <- Stationary_NMDS_16S$points
+
+
+stressplot(Stationary_NMDS_16S)
+
+# Create label for stress value
+Stationary_Stress_val = grobTree(textGrob("Stress = 0.16", x = 0.05,  y = 0.05, hjust = 0, gp = gpar(col = "Black", fontsize = 14,fontface = "italic")))
+
+
+Stationary_Sven_phyto_16S_NMDS <- plot_ordination(Sven_phyto_rare_Stationary, Stationary_NMDS_16S, type = "samples",color="Phyto", shape= "BacterialStatus")+
+  geom_point(size=3)+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_color_manual("Phytoplankton",values = Cond.col) +
+  My_Theme+
+  annotation_custom(Stationary_Stress_val)+
+  theme_bw(base_size=12)+
+  scale_linetype_manual(breaks=c("Stationary","Stationary", "Stationary", "Death"),values=c("solid","longdash","dotdash","dotted"))+
+  scale_linetype_discrete(name = "Phytoplankton")+
+  geom_mark_ellipse(aes(group=Phyto, label = Phyto,linetype = Phyto),alpha = 1,con.cap = 1)+
+  xlim(-2.1, 1.9)+
+  ylim(-2.1, 1.8)+
+  ggtitle("Stationary")+
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+Stationary_Sven_phyto_16S_NMDS$layers <- Stationary_Sven_phyto_16S_NMDS$layers[-1]
+
+Stationary_Sven_phyto_16S_NMDS
+
+# Stats by Culture_type
+# ANOSIM
+Culture_type_group = get_variable(Sven_phyto_rare_Stationary, "Culture_type")
+Culture_type_ano = anosim(phyloseq::distance(Sven_phyto_rare_Stationary, "bray"), Culture_type_group)
+Culture_type_ano$signif
+Culture_type_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Sven_phyto_rare_Stationary), "data.frame")
+# Calculate your Bray distance matrix
+Culture_type_ado = phyloseq::distance(Sven_phyto_rare_Stationary, "bray")
+# Perform your ADONIS test
+Culture_type_ado_stats <- adonis2(Culture_type_ado ~ Culture_type, df_ado)
+
+# Check results
+Culture_type_ado_stats
+
+```
+
+
+```{r Compare beta diversity Death, results='markup'}
+
+Sven_phyto_rare_Death <- subset_samples(Sven_phyto_rare, Cultivation_Stage == "Death")
+Sven_phyto_rare_Death
+
+# Ordinate data using Non-metric multidimensional scaling (NMDS) on Bray–Curtis dissimilarity (distances)
+set.seed(1)
+Death_NMDS_16S <- ordinate(Sven_phyto_rare_Death, "NMDS", "bray")
+
+# By calling the newly created file we can get the stress value of the plot
+Death_NMDS_16S
+
+nmds_coordinates <- Death_NMDS_16S$points
+
+
+stressplot(Death_NMDS_16S)
+
+# Create label for stress value
+Death_Stress_val = grobTree(textGrob("Stress = 0.15", x = 0.05,  y = 0.05, hjust = 0, gp = gpar(col = "Black", fontsize = 14,fontface = "italic")))
+
+
+Death_Sven_phyto_16S_NMDS <- plot_ordination(Sven_phyto_rare_Death, Death_NMDS_16S, type = "samples",color="Phyto", shape= "BacterialStatus")+
+  geom_point(size=3)+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_color_manual("Phytoplankton",values = Cond.col) +
+  My_Theme+
+  annotation_custom(Death_Stress_val)+
+  theme_bw(base_size=12)+
+  scale_linetype_manual(breaks=c("Death","Death", "Death", "Death"),values=c("solid","longdash","dotdash","dotted"))+
+  scale_linetype_discrete(name = "Phytoplankton")+
+  geom_mark_ellipse(aes(group=Phyto, label = Phyto,linetype = Phyto),alpha = 1,con.cap = 1)+
+  xlim(-1, 1.3)+
+  ylim(-1.3, 1.3)+
+  ggtitle("Death")+
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+Death_Sven_phyto_16S_NMDS$layers <- Death_Sven_phyto_16S_NMDS$layers[-1]
+
+Death_Sven_phyto_16S_NMDS
+
+
+
+# Stats by Culture_type
+# ANOSIM
+Culture_type_group = get_variable(Sven_phyto_rare_Death, "Culture_type")
+Culture_type_ano = anosim(phyloseq::distance(Sven_phyto_rare_Death, "bray"), Culture_type_group)
+Culture_type_ano$signif
+Culture_type_ano$statistic
+
+# ADONIS
+# Create a data frame using your sample_data
+df_ado = as(sample_data(Sven_phyto_rare_Death), "data.frame")
+# Calculate your Bray distance matrix
+Culture_type_ado = phyloseq::distance(Sven_phyto_rare_Death, "bray")
+# Perform your ADONIS test
+Culture_type_ado_stats <- adonis2(Culture_type_ado ~ Culture_type, df_ado)
+
+# Check results
+Culture_type_ado_stats
+
+```
+
+```{r Combine NMDS plots}
+
+Combined_NMDS_plot = ggpubr::ggarrange(Lag_Sven_phyto_16S_NMDS,
+                                  Exponential_Sven_phyto_16S_NMDS,
+                                  Stationary_Sven_phyto_16S_NMDS,
+                                  Death_Sven_phyto_16S_NMDS,
+                                  ncol = 2,
+                                  nrow = 2,
+                                  common.legend = T,
+                                  legend = "right")
+
+
+
+```
