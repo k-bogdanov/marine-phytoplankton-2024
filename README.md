@@ -4,3 +4,4 @@ Code for phytoplankton paper (2024). Steps:
 3. calculating alpha/beta diversity
 4. comparing distances
 5. making stack bar taxa plots and checking which taxa were significantly affected
+6. analysing chemical data
