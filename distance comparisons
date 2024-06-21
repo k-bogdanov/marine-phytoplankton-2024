@@ -1,0 +1,426 @@
+```{r distance comparisons Lag}
+
+Totu_table = t(otu_table(Sven_phyto_rare_Lag)) # transpose otu table
+otu_table(Sven_phyto_rare_Lag) = Totu_table
+
+p = Sven_phyto_rare_Lag
+m = "bray"
+s = "Original.names"
+d = "Culture_type"
+
+# Calculate distances
+library(reshape2)
+library(reshape)
+library(dplyr)
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+
+
+
+# Remove self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor, as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor, as.character) 
+
+library(tibble)
+sd <- tibble::rownames_to_column(sd, "Sample.names")
+sd = subset(sd, select = -c(Original.names) )
+
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Culture_type")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Culture_type2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums = wu.sd %>%
+  filter(Culture_type == 'BacterialControl') %>%
+  mutate_if(is.factor,as.character)
+
+# Order factors
+wu.sd.sums$Culture_type2 = factor(wu.sd.sums$Culture_type2, levels = c('BacterialControl', 'CoccolithophoreOnly', 'CoccolithophoreBacteria' ,'DiatomOnly','DiatomBacteria'))
+
+library(ggpubr)
+
+
+sdpb = data.frame(sample_data(p))%>%
+  select(s, d, Phyto,BacterialStatus)%>%
+  mutate_if(is.factor, as.character)
+
+sdpb <- tibble::rownames_to_column(sdpb, "Sample.names")
+sdpb = subset(sdpb, select = -c(Original.names) )
+colnames(sdpb) = c("Var2", "Culture_type2","Phyto", "BacterialStatus")
+wu.sd.sums = left_join(wu.sd.sums, sdpb, by = "Var2")
+
+
+#wu.sd.sums$BacterialStatus = factor(wu.sd.sums$BacterialStatus,levels = c("None","Coccolithophore","Diatom"))
+
+wu.sd.sums$Phyto<-as.factor(wu.sd.sums$Phyto)
+
+
+
+Lag_16S_dist_plot<-ggplot(wu.sd.sums, aes(x = Culture_type2.x, y = value,
+                                                 fill = Phyto, 
+                                                 group = Culture_type2.x))+
+  geom_boxplot() +
+  geom_point()+
+  ylab("Bray distance") + xlab("") +
+  stat_compare_means(method = "kruskal.test", size = 3,label.x = 3, label.y = .2, aes(group = Culture_type2.x))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "BacterialControl") + 
+  ggtitle("Lag")+
+  theme_bw()+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_fill_manual("Phytoplankton",values = Cond.col) +
+  ylab("Bray Distance")+
+  My_Theme+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2)))+
+  scale_x_discrete(breaks=c('BacterialControl', 'CoccolithophoreOnly', 'CoccolithophoreBacteria' ,'DiatomOnly','DiatomBacteria'),
+                     labels=c("Control","Coccolithophore","Coccolithophore + microbiome", "Diatom", "Diatom + microbiome"))+
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+Lag_16S_dist_plot
+
+
+
+```
+
+```{r distance comparisons Exponential}
+
+Sven_phyto_rare_Exponential <- subset_samples(Sven_phyto_rare, Cultivation_Stage == "Exponential")
+Sven_phyto_rare_Exponential
+
+Totu_table = t(otu_table(Sven_phyto_rare_Exponential)) # transpose otu table
+otu_table(Sven_phyto_rare_Exponential) = Totu_table
+
+p = Sven_phyto_rare_Exponential
+m = "bray"
+s = "Original.names"
+d = "Culture_type"
+
+# Calculate distances
+library(reshape2)
+library(reshape)
+library(dplyr)
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+
+
+
+# Remove self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor, as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor, as.character) 
+
+library(tibble)
+sd <- tibble::rownames_to_column(sd, "Sample.names")
+sd = subset(sd, select = -c(Original.names) )
+
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Culture_type")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Culture_type2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums = wu.sd %>%
+  filter(Culture_type == 'BacterialControl') %>%
+  mutate_if(is.factor,as.character)
+
+# Order factors
+wu.sd.sums$Culture_type2 = factor(wu.sd.sums$Culture_type2, levels = c('BacterialControl', 'CoccolithophoreOnly', 'CoccolithophoreBacteria' ,'DiatomOnly','DiatomBacteria'))
+
+
+
+sdpb = data.frame(sample_data(p))%>%
+  select(s, d, Phyto,BacterialStatus)%>%
+  mutate_if(is.factor, as.character)
+
+sdpb <- tibble::rownames_to_column(sdpb, "Sample.names")
+sdpb = subset(sdpb, select = -c(Original.names) )
+colnames(sdpb) = c("Var2", "Culture_type2","Phyto", "BacterialStatus")
+wu.sd.sums = left_join(wu.sd.sums, sdpb, by = "Var2")
+
+
+wu.sd.sums$BacterialStatus = factor(wu.sd.sums$BacterialStatus,
+                                           levels = c("None",
+                                                      "Coccolithophore",
+                                                      "Diatom"))
+
+wu.sd.sums$Phyto<-as.factor(wu.sd.sums$Phyto)
+
+
+
+Exponential_16S_dist_plot<-ggplot(wu.sd.sums, aes(x = Culture_type2.x, y = value,
+                                                 fill = Phyto, 
+                                                 group = Culture_type2.x))+
+  geom_boxplot() +
+  geom_point()+
+  ylab("Bray distance") + xlab("") +
+  stat_compare_means(method = "kruskal.test", size = 3,label.x = 3, label.y = .5, aes(group = Culture_type2.x))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "BacterialControl") + 
+  ggtitle("Exponential")+
+  theme_bw()+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_fill_manual("Phytoplankton",values = Cond.col) +
+  ylab("Bray Distance")+
+  My_Theme+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2)))+
+  scale_x_discrete(breaks=c('BacterialControl', 'CoccolithophoreOnly', 'CoccolithophoreBacteria' ,'DiatomOnly','DiatomBacteria'),
+                     labels=c("Control","Coccolithophore","Coccolithophore + microbiome", "Diatom", "Diatom + microbiome"))+
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+
+Exponential_16S_dist_plot
+
+
+
+
+```
+
+```{r distance comparisons Stationary}
+
+Sven_phyto_rare_Stationary <- subset_samples(Sven_phyto_rare, Cultivation_Stage == "Stationary")
+Sven_phyto_rare_Stationary
+
+Totu_table = t(otu_table(Sven_phyto_rare_Stationary)) # transpose otu table
+otu_table(Sven_phyto_rare_Stationary) = Totu_table
+
+p = Sven_phyto_rare_Stationary
+m = "bray"
+s = "Original.names"
+d = "Culture_type"
+
+# Calculate distances
+
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+
+
+
+# Remove self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor, as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor, as.character) 
+
+
+sd <- tibble::rownames_to_column(sd, "Sample.names")
+sd = subset(sd, select = -c(Original.names) )
+
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Culture_type")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Culture_type2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums = wu.sd %>%
+  filter(Culture_type == 'BacterialControl') %>%
+  mutate_if(is.factor,as.character)
+
+# Order factors
+wu.sd.sums$Culture_type2 = factor(wu.sd.sums$Culture_type2, levels = c('BacterialControl', 'CoccolithophoreOnly', 'CoccolithophoreBacteria' ,'DiatomOnly','DiatomBacteria'))
+
+
+
+
+sdpb = data.frame(sample_data(p))%>%
+  select(s, d, Phyto,BacterialStatus)%>%
+  mutate_if(is.factor, as.character)
+
+sdpb <- tibble::rownames_to_column(sdpb, "Sample.names")
+sdpb = subset(sdpb, select = -c(Original.names) )
+colnames(sdpb) = c("Var2", "Culture_type2","Phyto", "BacterialStatus")
+wu.sd.sums = left_join(wu.sd.sums, sdpb, by = "Var2")
+
+
+wu.sd.sums$BacterialStatus = factor(wu.sd.sums$BacterialStatus,
+                                           levels = c("None",
+                                                      "Coccolithophore",
+                                                      "Diatom"))
+
+wu.sd.sums$Phyto<-as.factor(wu.sd.sums$Phyto)
+
+
+
+Stationary_16S_dist_plot<-ggplot(wu.sd.sums, aes(x = Culture_type2.x, y = value,
+                                                 fill = Phyto, 
+                                                 group = Culture_type2.x))+
+  geom_boxplot() +
+  geom_point()+
+  ylab("Bray distance") + xlab("") +
+  stat_compare_means(method = "kruskal.test", size = 3,label.x = 3, label.y = .6, aes(group = Culture_type2.x))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "BacterialControl",position = position_nudge(y = 0.03)) + 
+  ggtitle("Stationary")+
+  theme_bw()+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_fill_manual("Phytoplankton",values = Cond.col) +
+  My_Theme+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2)))+
+  scale_x_discrete(breaks=c('BacterialControl', 'CoccolithophoreOnly', 'CoccolithophoreBacteria' ,'DiatomOnly','DiatomBacteria'),
+                     labels=c("Control","Coccolithophore","Coccolithophore + microbiome", "Diatom", "Diatom + microbiome"))+
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+
+Stationary_16S_dist_plot
+
+
+
+```
+
+
+```{r distance comparisons Death}
+
+Sven_phyto_rare_Death <- subset_samples(Sven_phyto_rare, Cultivation_Stage == "Death")
+Sven_phyto_rare_Death
+
+Totu_table = t(otu_table(Sven_phyto_rare_Death)) # transpose otu table
+otu_table(Sven_phyto_rare_Death) = Totu_table
+
+p = Sven_phyto_rare_Death
+m = "bray"
+s = "Original.names"
+d = "Culture_type"
+
+# Calculate distances
+
+wu = vegan::vegdist(t(otu_table(p)), method = "bray")
+wu.m = melt(as.matrix(wu))
+
+colnames(wu.m) <- c("Var1", "Var2", "value")
+
+
+
+
+# Remove self-comparisons
+wu.m = wu.m %>%
+  filter(as.character(Var1) != as.character(Var2)) %>%
+  mutate_if(is.factor, as.character)
+
+# Get sample data (S4 error OK and expected)
+sd = data.frame(sample_data(p))%>%
+  select(s, d)%>%
+  mutate_if(is.factor, as.character) 
+
+library(tibble)
+sd <- tibble::rownames_to_column(sd, "Sample.names")
+sd = subset(sd, select = -c(Original.names) )
+
+
+# Combined distances with sample data
+colnames(sd) = c("Var1", "Culture_type")
+wu.sd = left_join(wu.m, sd, by = "Var1")
+
+colnames(sd) = c("Var2", "Culture_type2")
+wu.sd = left_join(wu.sd, sd, by = "Var2")
+
+wu.sd.sums = wu.sd %>%
+  filter(Culture_type == 'BacterialControl') %>%
+  mutate_if(is.factor,as.character)
+
+# Order factors
+wu.sd.sums$Culture_type2 = factor(wu.sd.sums$Culture_type2, levels = c('BacterialControl', 'CoccolithophoreOnly', 'CoccolithophoreBacteria' ,'DiatomOnly','DiatomBacteria'))
+
+
+
+sdpb = data.frame(sample_data(p))%>%
+  select(s, d, Phyto,BacterialStatus)%>%
+  mutate_if(is.factor, as.character)
+
+sdpb <- tibble::rownames_to_column(sdpb, "Sample.names")
+sdpb = subset(sdpb, select = -c(Original.names) )
+colnames(sdpb) = c("Var2", "Culture_type2","Phyto", "BacterialStatus")
+wu.sd.sums = left_join(wu.sd.sums, sdpb, by = "Var2")
+
+
+wu.sd.sums$BacterialStatus = factor(wu.sd.sums$BacterialStatus,
+                                           levels = c("None",
+                                                      "Coccolithophore",
+                                                      "Diatom"))
+
+wu.sd.sums$Phyto<-as.factor(wu.sd.sums$Phyto)
+
+
+
+Death_16S_dist_plot<-ggplot(wu.sd.sums, aes(x = Culture_type2.x, y = value,
+                                                 fill = Phyto, 
+                                                 group = Culture_type2.x))+
+  geom_boxplot() +
+  geom_point()+
+  ylab("Bray distance") + xlab("") +
+  stat_compare_means(method = "kruskal.test", size = 3,label.x = 3, label.y = .6, aes(group = Culture_type2.x))+
+  stat_compare_means(aes(label = after_stat(p.signif)),
+                     method = "t.test", ref.group = "BacterialControl") + 
+  ggtitle("Death")+
+  theme_bw()+
+  scale_shape_manual("Microbiome", values = BactStat.sha)+
+  scale_fill_manual("Phytoplankton",values = Cond.col) +
+  ylab("Bray Distance")+
+  My_Theme+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2)))+
+  scale_x_discrete(breaks=c('BacterialControl', 'CoccolithophoreOnly', 'CoccolithophoreBacteria' ,'DiatomOnly','DiatomBacteria'),
+                     labels=c("Control","Coccolithophore","Coccolithophore + microbiome", "Diatom", "Diatom + microbiome"))+
+  theme(
+    plot.title=element_text(face='bold')
+  )
+
+
+Death_16S_dist_plot
+
+
+
+
+```
+
+```{r Combine distance plots}
+
+Combined_dist_plot = ggpubr::ggarrange(Lag_16S_dist_plot,
+                                       Exponential_16S_dist_plot,
+                                       Stationary_16S_dist_plot,
+                                       Death_16S_dist_plot,
+                                       ncol = 2,
+                                       nrow = 2,
+                                       common.legend = T,
+                                       legend = "right")
+
+
+```
