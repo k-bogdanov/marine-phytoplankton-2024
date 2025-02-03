@@ -1,4 +1,6 @@
-Code for phytoplankton paper (2024).
+Code for paper "Marine phytoplankton impose strong selective pressures on in vitro microbiome assembly, but drift is the dominant process"
+https://doi.org/10.1093/ismeco/ycaf001
+
 Steps:
 1. rarefaction, iCAMP
 2. calculation of alpha and beta diversity
